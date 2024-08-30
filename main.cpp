@@ -1,8 +1,9 @@
 #include <iostream>
-#include <string>
-#include <memory>
 #include <sstream>
 #include <vector>
+#include <memory>
+#include <fstream> // For file handling
+#include <string>
 
 // Define different types of tokens our language can have
 enum class TokenType
@@ -21,26 +22,26 @@ enum class TokenType
     INVALID      // Anything that doesn't match a valid token
 };
 
-// Token structure to hold a token's type and value
+// Token structure to hold a token's type and its value
 struct Token
 {
     TokenType type;
     std::string value;
 };
 
+// The Lexer class turns an input string into tokens
 class Lexer
 {
 public:
-    Lexer(std::string &source) : source(source), pos(0), currentChar(source[pos]) {}
+    Lexer(const std::string &source) : source(source), pos(0), currentChar(source[0]) {}
 
+    // Get the next token from the input
     Token getNextToken()
     {
         while (currentChar != '\0')
         {
-            // Skip the space
             if (isspace(currentChar))
             {
-                // Skip to next character
                 advance();
                 continue;
             }
@@ -60,35 +61,50 @@ public:
                 advance();
                 return {TokenType::PLUS, "+"};
             }
+
             if (currentChar == '-')
             {
                 advance();
                 return {TokenType::MINUS, "-"};
             }
+
             if (currentChar == '*')
             {
                 advance();
                 return {TokenType::MULTIPLY, "*"};
             }
+
             if (currentChar == '/')
             {
                 advance();
                 return {TokenType::DIVIDE, "/"};
             }
+
+            if (currentChar == '(')
+            {
+                advance();
+                return {TokenType::L_PAREN, "("};
+            }
+
+            if (currentChar == ')')
+            {
+                advance();
+                return {TokenType::R_PAREN, ")"};
+            }
+
             return {TokenType::INVALID, std::string(1, currentChar)};
         }
         return {TokenType::END_OF_LINE, ""};
     }
 
 private:
-    std::string source; // Source string or source
-    size_t pos;         // Current position in the source string
-    char currentChar;
+    std::string source; // Input string
+    size_t pos;         // Current position in the string
+    char currentChar;   // Current character
 
-    // Move to next character in the source string
+    // Move to the next character in the input
     void advance()
     {
-        // Increment position
         pos++;
         if (pos < source.length())
         {
@@ -96,12 +112,11 @@ private:
         }
         else
         {
-            // Indicate end of file
-            currentChar = '\0';
+            currentChar = '\0'; // End of input
         }
     }
 
-    // Handle number token
+    // Handle number tokens
     Token number()
     {
         std::string result;
@@ -113,7 +128,7 @@ private:
         return {TokenType::NUMBER, result};
     }
 
-    // Handle identifier tokens (like variable name)
+    // Handle identifier tokens (like variable names)
     Token identifier()
     {
         std::string result;
@@ -136,8 +151,18 @@ struct ASTNode
     ASTNode(Token token) : token(token) {}
 };
 
+// The Parser class builds an AST from the tokens
 class Parser
 {
+public:
+    Parser(Lexer &lexer) : lexer(lexer), currentToken(lexer.getNextToken()) {}
+
+    // Parse the expression and build the AST
+    std::unique_ptr<ASTNode> parse()
+    {
+        return expr();
+    }
+
 private:
     Lexer &lexer;
     Token currentToken;
@@ -159,7 +184,7 @@ private:
                 eat(TokenType::MINUS);
             }
 
-            std::unique_ptr<ASTNode> newNode = std::make_unique<ASTNode>(token);
+            auto newNode = std::make_unique<ASTNode>(token);
             newNode->left = std::move(node);
             newNode->right = term();
             node = std::move(newNode);
@@ -167,6 +192,7 @@ private:
         return node;
     }
 
+    // term handles multiplication and division
     std::unique_ptr<ASTNode> term()
     {
         std::unique_ptr<ASTNode> node = factor();
@@ -183,15 +209,15 @@ private:
                 eat(TokenType::DIVIDE);
             }
 
-            std::unique_ptr<ASTNode> newNode = std::make_unique<ASTNode>(token);
+            auto newNode = std::make_unique<ASTNode>(token);
             newNode->left = std::move(node);
             newNode->right = factor();
             node = std::move(newNode);
-        };
+        }
         return node;
     }
 
-    // factor handle number and parentheses
+    // factor handles numbers and parentheses
     std::unique_ptr<ASTNode> factor()
     {
         Token token = currentToken;
@@ -203,11 +229,11 @@ private:
         else if (token.type == TokenType::L_PAREN)
         {
             eat(TokenType::L_PAREN);
-            std::unique_ptr<ASTNode> node = expr();
+            auto node = expr();
             eat(TokenType::R_PAREN);
             return node;
         }
-        throw std::runtime_error("Invalid syntax");
+        throw std::runtime_error("Invalid syntax: Expected number or '('");
     }
 
     // eat checks if the current token is what we expect and then gets the next token
@@ -223,3 +249,92 @@ private:
         }
     }
 };
+
+// The Interpreter class walks the AST and computes the result
+class Interpreter
+{
+public:
+    Interpreter(Parser &parser) : parser(parser) {}
+
+    // Interpret the expression and return the result
+    int interpret()
+    {
+        std::unique_ptr<ASTNode> tree = parser.parse();
+        return visit(tree.get());
+    }
+
+private:
+    Parser &parser;
+
+    // visit walks the AST and evaluates the expression
+    int visit(ASTNode *node)
+    {
+        if (node->token.type == TokenType::NUMBER)
+        {
+            return std::stoi(node->token.value);
+        }
+
+        if (node->token.type == TokenType::PLUS)
+        {
+            return visit(node->left.get()) + visit(node->right.get());
+        }
+        if (node->token.type == TokenType::MINUS)
+        {
+            return visit(node->left.get()) - visit(node->right.get());
+        }
+        if (node->token.type == TokenType::MULTIPLY)
+        {
+            return visit(node->left.get()) * visit(node->right.get());
+        }
+        if (node->token.type == TokenType::DIVIDE)
+        {
+            return visit(node->left.get()) / visit(node->right.get());
+        }
+        throw std::runtime_error("Invalid syntax");
+    }
+};
+
+// Main function: The entry point of the program
+int main()
+{
+    std::string filename = "main.x";
+    std::ifstream file(filename);
+
+    if (!file)
+    {
+        std::cerr << "Error: Could not open the file" << filename << std::endl;
+        return 1;
+    }
+
+    std::string source;
+
+    while (std::getline(file, source))
+        ;
+
+    file.close();
+
+    // Input string for the expression
+
+    // Create the lexer with the input string
+    Lexer lexer(source);
+
+    // Create the parser with the lexer
+    Parser parser(lexer);
+
+    // Create the interpreter with the parser
+    Interpreter interpreter(parser);
+
+    try
+    {
+        // Interpret the expression and print the result
+        int result = interpreter.interpret();
+        std::cout << "Result: " << result << std::endl;
+    }
+    catch (std::exception &e)
+    {
+        // Handle any errors
+        std::cerr << e.what() << std::endl;
+    }
+
+    return 0;
+}
