@@ -125,3 +125,101 @@ private:
         return {TokenType::IDENTIFIER, result};
     }
 };
+
+// ASTNode represents a node in the Abstract Syntax Tree
+struct ASTNode
+{
+    Token token;
+    std::unique_ptr<ASTNode> left;
+    std::unique_ptr<ASTNode> right;
+
+    ASTNode(Token token) : token(token) {}
+};
+
+class Parser
+{
+private:
+    Lexer &lexer;
+    Token currentToken;
+
+    // expr handles addition and subtraction
+    std::unique_ptr<ASTNode> expr()
+    {
+        std::unique_ptr<ASTNode> node = term();
+
+        while (currentToken.type == TokenType::PLUS || currentToken.type == TokenType::MINUS)
+        {
+            Token token = currentToken;
+            if (token.type == TokenType::PLUS)
+            {
+                eat(TokenType::PLUS);
+            }
+            else if (token.type == TokenType::MINUS)
+            {
+                eat(TokenType::MINUS);
+            }
+
+            std::unique_ptr<ASTNode> newNode = std::make_unique<ASTNode>(token);
+            newNode->left = std::move(node);
+            newNode->right = term();
+            node = std::move(newNode);
+        }
+        return node;
+    }
+
+    std::unique_ptr<ASTNode> term()
+    {
+        std::unique_ptr<ASTNode> node = factor();
+
+        while (currentToken.type == TokenType::MULTIPLY || currentToken.type == TokenType::DIVIDE)
+        {
+            Token token = currentToken;
+            if (token.type == TokenType::MULTIPLY)
+            {
+                eat(TokenType::MULTIPLY);
+            }
+            else if (token.type == TokenType::DIVIDE)
+            {
+                eat(TokenType::DIVIDE);
+            }
+
+            std::unique_ptr<ASTNode> newNode = std::make_unique<ASTNode>(token);
+            newNode->left = std::move(node);
+            newNode->right = factor();
+            node = std::move(newNode);
+        };
+        return node;
+    }
+
+    // factor handle number and parentheses
+    std::unique_ptr<ASTNode> factor()
+    {
+        Token token = currentToken;
+        if (token.type == TokenType::NUMBER)
+        {
+            eat(TokenType::NUMBER);
+            return std::make_unique<ASTNode>(token);
+        }
+        else if (token.type == TokenType::L_PAREN)
+        {
+            eat(TokenType::L_PAREN);
+            std::unique_ptr<ASTNode> node = expr();
+            eat(TokenType::R_PAREN);
+            return node;
+        }
+        throw std::runtime_error("Invalid syntax");
+    }
+
+    // eat checks if the current token is what we expect and then gets the next token
+    void eat(TokenType type)
+    {
+        if (currentToken.type == type)
+        {
+            currentToken = lexer.getNextToken();
+        }
+        else
+        {
+            throw std::runtime_error("Invalid syntax");
+        }
+    }
+};
